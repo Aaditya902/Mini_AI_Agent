@@ -1,0 +1,143 @@
+# Namespace 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-agent
+
+# Secret (API key injected by CI/CD) 
+apiVersion: v1
+kind: Secret
+metadata:
+  name: agent-secrets
+  namespace: ai-agent
+type: Opaque
+stringData:
+  ANTHROPIC_API_KEY: "REPLACE_VIA_CI"
+
+# Deployment 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-ai-agent
+  namespace: ai-agent
+  labels:
+    app: mini-ai-agent
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mini-ai-agent
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0          # zero-downtime deploys
+  template:
+    metadata:
+      labels:
+        app: mini-ai-agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: agent
+          image: mini-ai-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: MODEL
+              value: "claude-sonnet-4-20250514"
+            - name: ENABLE_STUB
+              value: "false"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]   # drain in-flight requests
+
+---
+# Service 
+apiVersion: v1
+kind: Service
+metadata:
+  name: mini-ai-agent-svc
+  namespace: ai-agent
+spec:
+  selector:
+    app: mini-ai-agent
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: ClusterIP
+
+# Horizontal Pod Autoscaler 
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mini-ai-agent-hpa
+  namespace: ai-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mini-ai-agent
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+
+# Ingress 
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mini-ai-agent-ingress
+  namespace: ai-agent
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+spec:
+  rules:
+    - host: agent.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mini-ai-agent-svc
+                port:
+                  number: 80

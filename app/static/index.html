@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini AI Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080b0f;
+      --surface:   #0d1117;
+      --surface2:  #161b22;
+      --surface3:  #1c2330;
+      --border:    #21262d;
+      --border2:   #30363d;
+      --accent:    #00d084;
+      --accent2:   #00a86b;
+      --accent-dim:#00d08422;
+      --text:      #e6edf3;
+      --text2:     #8b949e;
+      --text3:     #484f58;
+      --error:     #ff6b6b;
+      --warn:      #f0a500;
+      --tool-clr:  #58a6ff;
+      --radius:    10px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      overflow: hidden;
+    }
+
+    /* Subtle grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.3;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Top glow */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 400px;
+      background: radial-gradient(ellipse, #00d08418 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 0 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      box-shadow: 0 0 20px #00d08440;
+    }
+
+    .logo-text {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 17px;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    .logo-text span { color: var(--accent); }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-dot {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text2);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .dot.offline { background: var(--error); box-shadow: 0 0 8px var(--error); animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .model-badge {
+      font-size: 10px;
+      color: var(--text3);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Chat area ── */
+    .chat {
+      overflow-y: auto;
+      padding: 24px 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border2) transparent;
+    }
+
+    .chat::-webkit-scrollbar { width: 4px; }
+    .chat::-webkit-scrollbar-track { background: transparent; }
+    .chat::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      padding: 40px 0;
+      animation: fadeIn 0.5s ease;
+    }
+
+    .empty-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      text-align: center;
+      letter-spacing: -0.5px;
+    }
+
+    .empty-title span { color: var(--accent); }
+
+    .empty-sub {
+      color: var(--text2);
+      text-align: center;
+      font-size: 12px;
+      max-width: 380px;
+      line-height: 1.8;
+    }
+
+    .suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      max-width: 560px;
+    }
+
+    .suggestion {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text2);
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      transition: all 0.15s;
+      text-align: left;
+    }
+
+    .suggestion:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    /* Message bubbles */
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      max-width: 75%;
+    }
+
+    .msg-user .bubble {
+      background: var(--surface3);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: var(--radius) var(--radius) 2px var(--radius);
+    }
+
+    .msg-agent {
+      align-self: flex-start;
+      max-width: 90%;
+      width: 100%;
+    }
+
+    .msg-label {
+      font-size: 10px;
+      color: var(--text3);
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      padding: 0 4px;
+    }
+
+    .msg-user .msg-label { text-align: right; }
+
+    .agent-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .answer-section {
+      padding: 16px 18px;
+      color: var(--text);
+      font-size: 13.5px;
+      line-height: 1.8;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .answer-section:last-child { border-bottom: none; }
+
+    /* Tools used row */
+    .tools-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .tools-label {
+      font-size: 10px;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      flex-shrink: 0;
+    }
+
+    .tool-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #58a6ff15;
+      border: 1px solid #58a6ff30;
+      color: var(--tool-clr);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 10px;
+      letter-spacing: 0.3px;
+    }
+
+    .tool-badge::before {
+      content: '⚙';
+      font-size: 9px;
+    }
+
+    /* Reasoning steps collapsible */
+    .reasoning-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--text3);
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      transition: color 0.15s;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .reasoning-toggle:hover { color: var(--text2); }
+
+    .toggle-icon {
+      font-size: 9px;
+      transition: transform 0.2s;
+    }
+
+    .toggle-icon.open { transform: rotate(90deg); }
+
+    .reasoning-steps {
+      display: none;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .reasoning-steps.visible { display: flex; }
+
+    .step {
+      font-size: 11px;
+      color: var(--text2);
+      line-height: 1.6;
+      padding: 2px 0;
+    }
+
+    .step:first-child { color: var(--accent); }
+
+    .step-tool {
+      color: var(--tool-clr);
+      padding-left: 12px;
+    }
+
+    /* Meta row */
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 18px;
+    }
+
+    .meta-item {
+      font-size: 10px;
+      color: var(--text3);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .meta-item .val { color: var(--text2); }
+
+    /* Error message */
+    .msg-error .bubble {
+      background: #ff6b6b10;
+      border: 1px solid #ff6b6b30;
+      color: var(--error);
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      font-size: 12px;
+    }
+
+    /* Thinking indicator */
+    .thinking {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text3);
+      font-size: 12px;
+      padding: 4px 0;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .thinking-dots {
+      display: flex;
+      gap: 4px;
+    }
+
+    .thinking-dots span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink 1.2s ease-in-out infinite;
+    }
+
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
+    /* ── Input area ── */
+    .input-area {
+      padding: 14px 0 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .input-wrap {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 10px 10px 10px 16px;
+      transition: border-color 0.2s;
+    }
+
+    .input-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      resize: none;
+      min-height: 22px;
+      max-height: 140px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+
+    textarea::placeholder { color: var(--text3); }
+
+    .send-btn {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      box-shadow: 0 0 12px #00d08440;
+    }
+
+    .send-btn:hover { background: var(--accent2); transform: scale(1.05); }
+    .send-btn:active { transform: scale(0.95); }
+    .send-btn:disabled { background: var(--surface3); box-shadow: none; cursor: not-allowed; transform: none; }
+
+    .send-btn svg { width: 16px; height: 16px; fill: #080b0f; }
+
+    .input-hint {
+      font-size: 10px;
+      color: var(--text3);
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    .input-hint kbd {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⚡</div>
+      <div class="logo-text">Mini<span>Agent</span></div>
+    </div>
+    <div class="header-meta">
+      <div class="status-dot">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText">connecting…</span>
+      </div>
+      <div class="model-badge" id="modelBadge">—</div>
+    </div>
+  </header>
+
+  <!-- Chat -->
+  <div class="chat" id="chat">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-title">Ask the <span>Agent</span></div>
+      <div class="empty-sub">
+        A ReAct-loop agent powered by Gemini with 5 built-in tools.<br/>
+        It reasons, picks tools, executes them, and synthesises an answer.
+      </div>
+      <div class="suggestions">
+        <div class="suggestion" onclick="fillQuery(this)">What is 1337 × 42?</div>
+        <div class="suggestion" onclick="fillQuery(this)">Convert 100 km to miles</div>
+        <div class="suggestion" onclick="fillQuery(this)">What is the current UTC time?</div>
+        <div class="suggestion" onclick="fillQuery(this)">Count words in: The quick brown fox jumps over the lazy dog</div>
+        <div class="suggestion" onclick="fillQuery(this)">Convert 72°F to Celsius and compute 999 * 777</div>
+        <div class="suggestion" onclick="fillQuery(this)">Format this JSON: {"name":"Aaditya","role":"AI Engineer"}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-area">
+    <div class="input-wrap">
+      <textarea
+        id="queryInput"
+        placeholder="Ask the agent anything…"
+        rows="1"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendQuery()" title="Send">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <div class="input-hint"><kbd>Enter</kbd> to send &nbsp;·&nbsp; <kbd>Shift+Enter</kbd> for new line</div>
+  </div>
+
+</div>
+
+<script>
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('queryInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const emptyState = document.getElementById('emptyState');
+  let sessionId = crypto.randomUUID();
+  let isLoading = false;
+
+  // ── Health check on load ──
+  async function checkHealth() {
+    try {
+      const r = await fetch('/health');
+      const d = await r.json();
+      document.getElementById('statusDot').className = 'dot';
+      document.getElementById('statusText').textContent = 'online';
+      document.getElementById('modelBadge').textContent = d.model || 'gemini';
+    } catch {
+      document.getElementById('statusDot').className = 'dot offline';
+      document.getElementById('statusText').textContent = 'offline';
+    }
+  }
+  checkHealth();
+
+  // ── Auto-resize textarea ──
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }
+
+  // ── Keyboard handler ──
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendQuery();
+    }
+  }
+
+  // ── Fill from suggestion ──
+  function fillQuery(el) {
+    input.value = el.textContent;
+    autoResize(input);
+    input.focus();
+  }
+
+  // ── Scroll to bottom ──
+  function scrollBottom() {
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  // ── Append user message ──
+  function appendUser(text) {
+    if (emptyState) emptyState.style.display = 'none';
+    const msg = document.createElement('div');
+    msg.className = 'message msg-user';
+    msg.innerHTML = `
+      <div class="msg-label">you</div>
+      <div class="bubble">${escHtml(text)}</div>
+    `;
+    chat.appendChild(msg);
+    scrollBottom();
+  }
+
+  // ── Append thinking indicator ──
+  function appendThinking() {
+    const el = document.createElement('div');
+    el.className = 'thinking';
+    el.id = 'thinking';
+    el.innerHTML = `
+      <div class="thinking-dots"><span></span><span></span><span></span></div>
+      <span>Agent reasoning…</span>
+    `;
+    chat.appendChild(el);
+    scrollBottom();
+    return el;
+  }
+
+  // ── Append agent response ──
+  function appendAgent(data) {
+    const thinkEl = document.getElementById('thinking');
+    if (thinkEl) thinkEl.remove();
+
+    const hasTools = data.tools_used && data.tools_used.length > 0;
+    const hasSteps = data.reasoning_steps && data.reasoning_steps.length > 0;
+
+    // Build tools badges HTML
+    let toolsHtml = '';
+    if (hasTools) {
+      const badges = data.tools_used.map(t =>
+        `<span class="tool-badge">${escHtml(t.name)}</span>`
+      ).join('');
+      toolsHtml = `
+        <div class="tools-row">
+          <span class="tools-label">Tools used</span>
+          ${badges}
+        </div>`;
+    }
+
+    // Build reasoning steps HTML
+    let stepsHtml = '';
+    if (hasSteps) {
+      const steps = data.reasoning_steps.map(s => {
+        const isTool = s.trim().startsWith('Tool') || s.trim().startsWith('  Tool');
+        return `<div class="step ${isTool ? 'step-tool' : ''}">${escHtml(s)}</div>`;
+      }).join('');
+      stepsHtml = `
+        <div class="reasoning-toggle" onclick="toggleSteps(this)">
+          <span class="toggle-icon">▶</span>
+          <span>Reasoning steps (${data.reasoning_steps.length})</span>
+        </div>
+        <div class="reasoning-steps">${steps}</div>`;
+    }
+
+    // Meta info
+    const tokens = data.tokens_used != null ? data.tokens_used : '—';
+    const latency = data.latency_ms != null ? data.latency_ms.toFixed(0) + ' ms' : '—';
+
+    const msg = document.createElement('div');
+    msg.className = 'message msg-agent';
+    msg.innerHTML = `
+      <div class="msg-label">agent · ${escHtml(data.request_id?.slice(0,8) ?? '')}</div>
+      <div class="agent-card">
+        <div class="answer-section">${escHtml(data.answer)}</div>
+        ${toolsHtml}
+        ${stepsHtml}
+        <div class="meta-row">
+          <div class="meta-item">latency <span class="val">${latency}</span></div>
+          <div class="meta-item">tokens <span class="val">${tokens}</span></div>
+          <div class="meta-item">session <span class="val">${escHtml(data.session_id?.slice(0,8) ?? '')}</span></div>
+        </div>
+      </div>
+    `;
+    chat.appendChild(msg);
+    scrollBottom();
+  }
+
+  // ── Append error ──
+  function appendError(msg) {
+    const thinkEl = document.getElementById('thinking');
+    if (thinkEl) thinkEl.remove();
+    const el = document.createElement('div');
+    el.className = 'message msg-error';
+    el.innerHTML = `<div class="bubble">⚠ ${escHtml(msg)}</div>`;
+    chat.appendChild(el);
+    scrollBottom();
+  }
+
+  // ── Toggle reasoning steps ──
+  function toggleSteps(toggle) {
+    const icon = toggle.querySelector('.toggle-icon');
+    const steps = toggle.nextElementSibling;
+    const isOpen = steps.classList.contains('visible');
+    steps.classList.toggle('visible', !isOpen);
+    icon.classList.toggle('open', !isOpen);
+  }
+
+  // ── Send query ──
+  async function sendQuery() {
+    const question = input.value.trim();
+    if (!question || isLoading) return;
+
+    isLoading = true;
+    sendBtn.disabled = true;
+    input.value = '';
+    input.style.height = 'auto';
+
+    appendUser(question);
+    appendThinking();
+
+    try {
+      const resp = await fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, session_id: sessionId }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        appendError(err.detail || 'Request failed');
+        return;
+      }
+
+      const data = await resp.json();
+      appendAgent(data);
+    } catch (e) {
+      appendError('Network error — is the agent running?');
+    } finally {
+      isLoading = false;
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  // ── HTML escape ──
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\n/g, '<br/>');
+  }
+
+  input.focus();
+</script>
+</body>
+</html>
